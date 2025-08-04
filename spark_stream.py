@@ -1,8 +1,8 @@
 import psycopg2
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import lit, from_json
-from pyspark.sql.types import StructField, StructType, StringType, IntegerType
+from pyspark.sql.functions import lit, from_json, col, window, collect_list, struct, monotonically_increasing_id, element_at, size, round, expr, to_json
+from pyspark.sql.types import StructField, StructType, StringType, TimestampType
 
 def create_spark():
 
@@ -23,8 +23,9 @@ def read_kafka(spark):
     df_kafka = spark.readStream \
                     .format("kafka") \
                     .option("kafka.bootstrap.servers", "localhost:9092") \
-                    .option("subscribe", "user-topic") \
-                    .option("startingOffsets", "latest") \
+                    .option("subscribe", "user-event") \
+                    .option("startingOffsets", "earliest") \
+                    .option("failOnDataLoss", "false") \
                     .load()
     
     return df_kafka
@@ -32,17 +33,11 @@ def read_kafka(spark):
 def format_kafka_df(kafka_df):
 
     schema = StructType([
-        StructField("id", StringType(), False),
-        StructField("name", StringType(), False),
-        StructField("company", StringType(), False),
-        StructField("username", StringType(), False),
-        StructField("email", StringType(), False),
-        StructField("address", StringType(), False),
-        StructField("zip", StringType(), False),
-        StructField("state", StringType(), False),
-        StructField("country", StringType(), False),
-        StructField("phone", StringType(), False),
-        StructField("photo", StringType(), False)
+        StructField("user_id", StringType(), False),
+        StructField("event_type", StringType(), True),
+        StructField("url", StringType(), True),
+        StructField("timestamp", TimestampType(), True),
+        StructField("utm_source", StringType(), True)
     ])
 
     spark_df = kafka_df.selectExpr("CAST(value as STRING)") \
@@ -50,6 +45,47 @@ def format_kafka_df(kafka_df):
                         .select("data.*")
     
     return spark_df
+
+def transform_data(spark_df):
+
+    session_df = spark_df.withWatermark("timestamp", "10 minutes") \
+                        .groupBy(
+                            col("user_id"),
+                            window(col("timestamp"), "1 minutes")
+                        ).agg(
+                            collect_list(
+                                struct(col("timestamp"), col("event_type"), col("url"), col("utm_source"))
+                            ).alias("events")
+                        )
+
+    session_df_transfrom = session_df.withColumn("session_id", expr("uuid()")) \
+                                    .withColumn("session_start_time", element_at(col("events"), 1).getField("timestamp")) \
+                                    .withColumn("session_end_time", element_at(col("events"), size(col("events"))).getField("timestamp")) \
+                                    .withColumn("session_duration_seconds", col("session_end_time").cast("long") - col("session_start_time").cast("long")) \
+                                    .withColumn("session_duration_minutes", round(col("session_duration_seconds") / 60, 2)) \
+                                    .withColumn("number_of_events", size(col("events"))) \
+                                    .withColumn("landing_page", element_at(col("events"), 1).getField("url")) \
+                                    .withColumn("exit_page", element_at(col("events"), size(col("events"))).getField("url")) \
+                                    .withColumn("events_json", to_json(col("events")))
+
+    session_df_transfrom = session_df_transfrom.select(
+        "session_id",
+        "user_id",
+        # "event_type",
+        # "url",
+        # "timestamp",
+        # "utm_source",
+        "session_start_time",
+        "session_end_time",
+        "session_duration_seconds", 
+        "session_duration_minutes",
+        "number_of_events",
+        "landing_page",
+        "exit_page",
+        "events_json"
+    )
+    
+    return session_df_transfrom
 
 def create_postgres_connection():
 
@@ -63,37 +99,44 @@ def create_postgres_connection():
 
     return conn
 
-def create_postgres_table(cursor):
+def create_postgres_table(cursor, drop=True):
+
+    if drop:
+        print("Drop table")
+        cursor.execute("DROP TABLE IF EXISTS user_session;")
 
     cursor.execute(
         """
-        CREATE TABLE IF NOT EXISTS spark_test (
-            id TEXT,
-            name TEXT,
-            company TEXT,
-            username TEXT,
-            email TEXT,
-            address TEXT,
-            zip TEXT,
-            state TEXT,
-            country TEXT,
-            phone TEXT,
-            photo TEXT
+        CREATE TABLE IF NOT EXISTS user_session (
+            session_id TEXT,
+            user_id TEXT,
+            session_start_time TIMESTAMPTZ,
+            session_end_time TIMESTAMPTZ,
+            session_duration_seconds BIGINT, 
+            session_duration_minutes NUMERIC(10, 2),
+            number_of_events INT,
+            landing_page TEXT,
+            exit_page TEXT,
+            events_json TEXT 
         );
     """
     )
     
 def write_to_postgres(batch_df, batch_id):
 
+    print(f"--- Processing batch {batch_id} with {batch_df.count()} rows ---")
+
     batch_df.write \
         .format("jdbc") \
         .option("url", "jdbc:postgresql://localhost:5432/airflow") \
-        .option("dbtable", "spark_test") \
+        .option("dbtable", "user_session") \
         .option("user", "airflow") \
         .option("password", "airflow") \
         .option("driver", "org.postgresql.Driver") \
         .mode("append") \
         .save()
+
+    print(f"--- Batch {batch_id} written to PostgreSQL ---")
 
 if __name__ == "__main__":
 
@@ -102,16 +145,16 @@ if __name__ == "__main__":
 
     # Connect to Postgres and create table
     postgres_cursor = postgres_conn.cursor()
-    create_postgres_table(postgres_cursor)
+    create_postgres_table(postgres_cursor, drop=True)
     postgres_conn.commit()
     postgres_cursor.close()
     postgres_conn.close()
 
     kafka_df = read_kafka(spark)
-
     spark_df = format_kafka_df(kafka_df=kafka_df)
+    spark_df_transform = transform_data(spark_df)
 
-    query = spark_df.writeStream \
+    query = spark_df_transform.writeStream \
                 .outputMode("append") \
                 .foreachBatch(write_to_postgres) \
                 .option("checkpointLocation", "/tmp/spark_checkpoint/kafka_pg") \
