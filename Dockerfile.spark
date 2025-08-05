@@ -1,0 +1,6 @@
+# Sử dụng image Spark làm base
+FROM bitnami/spark:3.5.0
+
+# Sao chép file requirements và cài đặt các thư viện
+COPY spark_requirements.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/spark_requirements.txt

@@ -34,16 +34,100 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     ports:
-      - "9092:9092"      # Host ↔ Kafka
-      - "29092:29092"    # Container ↔ Kafka (dùng cho các service khác)
+      - "9092:9092"     # Host ↔ Kafka
+      - "29092:29092"   # Container ↔ Kafka (dùng cho các service khác)
     networks:
       - airflow_kafka
+
+  # --- Dịch vụ Spark Master ---
+  spark-master:
+    # image: bitnami/spark:3.5.0 # Sử dụng image Spark của Bitnami
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    hostname: spark-master
+    container_name: spark-master
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no" # Tắt xác thực RPC cho môi trường dev
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      # SPARK_MASTER_WEBUI_PORT: 8080 # Mặc định 8080, nhưng Airflow dùng 8080
+    ports:
+      - "7077:7077" # Cổng cho client kết nối tới master
+      - "8081:8080" # Cổng Web UI của Spark Master (đổi sang 8081 để tránh xung đột với Airflow)
+    networks:
+      - airflow_kafka
+
+  # --- Dịch vụ Spark Worker ---
+  spark-worker:
+    # image: bitnami/spark:3.5.0
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    hostname: spark-worker
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: spark://spark-master:7077 # Kết nối tới master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+      SPARK_RPC_ENCRYPTION_ENABLED: "no"
+      SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
+      SPARK_SSL_ENABLED: "no"
+      SPARK_WORKER_CORES: 1 # Số core CPU worker sử dụng (điều chỉnh theo máy bạn)
+      SPARK_WORKER_MEMORY: 1G # RAM worker sử dụng (điều chỉnh theo máy bạn)
+    networks:
+      - airflow_kafka
+
+  # --- Dịch vụ Spark Submit Client (nơi Airflow sẽ chạy spark-submit) ---
+  spark-submit-client:
+    # image: bitnami/spark:3.5.0
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    hostname: spark-submit-client
+    container_name: spark-submit-client
+    depends_on:
+      - spark-master
+      - kafka # Đảm bảo có thể kết nối Kafka
+      - postgres # Đảm bảo có thể kết nối Postgres
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+    volumes:
+      - ./dags:/opt/airflow/dags # Airflow cần truy cập DAGs
+      - ./spark_jobs:/opt/spark/jobs # Thư mục chứa các script Spark của bạn
+      - ./data_lake:/opt/spark/data_lake
+    networks:
+      - airflow_kafka
+    command: ["bash"] # Giữ container chạy để Airflow có thể exec vào
+
+  spark-stream-job:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    hostname: spark-stream-job
+    container_name: spark-stream-job
+    depends_on:
+      - spark-master
+      - kafka
+    volumes:
+      - ./spark_jobs:/opt/spark/jobs
+      - ./data_lake:/opt/spark/data_lake
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+    networks:
+      - airflow_kafka
+    command: /opt/bitnami/spark/bin/spark-submit --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0 --master spark://spark-master:7077 --deploy-mode client --name spark-streaming-job /opt/spark/jobs/spark_stream.py
 
   airflow-webserver:
     build: .
     restart: always
     depends_on:
       - airflow-init
+      - spark-master # Thêm dependency để đảm bảo Spark Master chạy trước
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -54,6 +138,8 @@ services:
     command: webserver
     volumes:
       - ./dags:/opt/airflow/dags
+      # Mount thư mục spark_jobs nếu bạn muốn Airflow webserver/scheduler cũng có thể truy cập
+      # - ./spark_jobs:/opt/spark/jobs
     networks:
       - airflow_kafka
 
@@ -62,6 +148,7 @@ services:
     restart: always
     depends_on:
       - airflow-init
+      - spark-master # Thêm dependency để đảm bảo Spark Master chạy trước
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -69,6 +156,7 @@ services:
     command: scheduler
     volumes:
       - ./dags:/opt/airflow/dags
+      # - ./spark_jobs:/opt/spark/jobs
     networks:
       - airflow_kafka
 
@@ -107,10 +195,10 @@ services:
     networks:
       - airflow_kafka
 
-
-
 volumes:
   postgres-db-volume:
+  # Thêm volume cho Data Lake cục bộ nếu bạn muốn dữ liệu bền vững trên host
+  data_lake:
 
 networks:
   airflow_kafka:

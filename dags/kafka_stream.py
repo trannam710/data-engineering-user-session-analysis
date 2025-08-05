@@ -6,6 +6,7 @@ import random
 
 from kafka import KafkaProducer
 from airflow.decorators import dag, task
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
 def get_data():
     
@@ -44,26 +45,35 @@ def json_serializer(data):
 def run_dag():
         
     @task
-    def kafa_stream():
+    def kafka_stream(num_records: int):
 
         producer = KafkaProducer(
                                 bootstrap_servers = "kafka:29092",
                                 value_serializer = json_serializer)
         
-        start_time = time.time()
+        
         try:
-            while True:
-                if time.time() - start_time > 300:
-                    break
-                
+            for i in range(num_records):                
                 producer.send("user-event", generate_user_event())
-                time.sleep(random.uniform(0.5, 2.0))
-        except KeyboardInterrupt:
-            print("Stop sending data")
+                time.sleep(random.uniform(0.1, 0.5))
+            print(f"Successfully sent {num_records} records.")
+        except Exception as e:
+            print(f"Error sending data: {e}")
+            raise # Báo lỗi để Airflow biết tác vụ thất bại
         finally:
             producer.close()
 
     # Define task
-    kafa_stream()
+    data_generator_task = kafka_stream(num_records=5000)
+
+    spark_batch_job_task = SparkSubmitOperator(
+        task_id="run_spark_batch_job",
+        conn_id="spark_default",
+        application="/opt/spark/jobs/spark_batch_job.py",
+        application_args=["{{ ds }}"]
+    )
+
+    data_generator_task >> spark_batch_job_task
+
 
 dags_instance = run_dag()
