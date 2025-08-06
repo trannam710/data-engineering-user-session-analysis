@@ -11,6 +11,8 @@ def create_spark():
                         .config("spark.jars.packages",
                                 "org.apache.spark:spark-sql-kafka-0-10_2.12:3.4.1,"
                                 "org.postgresql:postgresql:42.6.0") \
+                        .config("spark.cores.max", "1") \
+                        .config("spark.executor.memory", "512m") \
                         .getOrCreate()
     
     spark.sparkContext.setLogLevel("WARN")
@@ -159,8 +161,8 @@ if __name__ == "__main__":
     query = spark_df_transform.writeStream \
                 .outputMode("append") \
                 .format("parquet") \
-                .option("path", f"file:///opt/spark/data_lake/sessions") \
-                .option("checkpointLocation", f"file:///opt/spark/data_lake/checkpoints/kafka_to_datalake") \
+                .option("path", "file:///opt/spark/data_lake/sessions") \
+                .option("checkpointLocation", "file:///opt/spark/data_lake/checkpoints/kafka_to_datalake") \
                 .partitionBy("date") \
                 .start()
     

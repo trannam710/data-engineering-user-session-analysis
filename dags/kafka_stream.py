@@ -64,7 +64,7 @@ def run_dag():
             producer.close()
 
     # Define task
-    data_generator_task = kafka_stream(num_records=5000)
+    data_generator_task = kafka_stream(num_records=50)
 
     spark_batch_job_task = SparkSubmitOperator(
         task_id="run_spark_batch_job",

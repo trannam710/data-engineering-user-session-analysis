@@ -73,12 +73,16 @@ services:
     environment:
       SPARK_MODE: worker
       SPARK_MASTER_URL: spark://spark-master:7077 # Kết nối tới master
+      JAVA_HOME: "/opt/bitnami/java" 
       SPARK_RPC_AUTHENTICATION_ENABLED: "no"
       SPARK_RPC_ENCRYPTION_ENABLED: "no"
       SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED: "no"
       SPARK_SSL_ENABLED: "no"
-      SPARK_WORKER_CORES: 1 # Số core CPU worker sử dụng (điều chỉnh theo máy bạn)
+      SPARK_WORKER_CORES: 3 # Số core CPU worker sử dụng (điều chỉnh theo máy bạn)
       SPARK_WORKER_MEMORY: 1G # RAM worker sử dụng (điều chỉnh theo máy bạn)
+    volumes:
+      - ./spark_jobs:/opt/spark/jobs
+      - ./data_lake:/opt/spark/data_lake # <-- THÊM DÒNG NÀY VÀO ĐÂY
     networks:
       - airflow_kafka
 
@@ -96,6 +100,7 @@ services:
       - postgres # Đảm bảo có thể kết nối Postgres
     environment:
       SPARK_MASTER_URL: spark://spark-master:7077
+      JAVA_HOME: "/opt/bitnami/java"  
     volumes:
       - ./dags:/opt/airflow/dags # Airflow cần truy cập DAGs
       - ./spark_jobs:/opt/spark/jobs # Thư mục chứa các script Spark của bạn
@@ -139,7 +144,8 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
       # Mount thư mục spark_jobs nếu bạn muốn Airflow webserver/scheduler cũng có thể truy cập
-      # - ./spark_jobs:/opt/spark/jobs
+      - ./spark_jobs:/opt/spark/jobs
+      - ./data_lake:/opt/spark/data_lake
     networks:
       - airflow_kafka
 
@@ -156,7 +162,8 @@ services:
     command: scheduler
     volumes:
       - ./dags:/opt/airflow/dags
-      # - ./spark_jobs:/opt/spark/jobs
+      - ./spark_jobs:/opt/spark/jobs
+      - ./data_lake:/opt/spark/data_lake
     networks:
       - airflow_kafka
 
