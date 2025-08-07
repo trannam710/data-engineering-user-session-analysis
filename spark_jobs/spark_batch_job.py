@@ -4,7 +4,11 @@ from pyspark.sql.functions import *
 from pyspark.sql.types import *
 
 def create_spark():
-    spark = SparkSession.builder.appName("DailyBatchJob").getOrCreate()
+    spark = SparkSession.builder \
+                        .appName("DailyBatchJob") \
+                        .config("spark.cores.max", "1") \
+                        .config("spark.executor.memory", "512m") \
+                        .getOrCreate()
     return spark
 
 def create_aggregate_tables(spark, yesterday):
@@ -40,7 +44,7 @@ def create_aggregate_tables(spark, yesterday):
         StructField("utm_source", StringType(), True)
     ]))
 
-    daily_funnel_analysis = raw_data.withColumn("events_list", from_json(col("event_json"), event_schema)) \
+    daily_funnel_analysis = raw_data.withColumn("events_list", from_json(col("events_json"), event_schema)) \
                                     .withColumn("event", explode(col("events_list"))) \
                                     .withColumn("session_start_date", to_date(col("session_start_time"))) \
                                     .groupBy(col("session_start_date"), col("event.event_type").alias("step_name")) \

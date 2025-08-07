@@ -70,6 +70,7 @@ def run_dag():
         task_id="run_spark_batch_job",
         conn_id="spark_default",
         application="/opt/spark/jobs/spark_batch_job.py",
+        packages="org.postgresql:postgresql:42.7.7",
         application_args=["{{ ds }}"]
     )
 
