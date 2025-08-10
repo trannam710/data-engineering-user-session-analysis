@@ -6,6 +6,8 @@ from pyspark.sql.types import StructField, StructType, StringType, TimestampType
 
 def create_spark():
 
+    # Creates a Spark session with the necessary configurations.
+
     spark = SparkSession.builder \
                         .appName("SparkPostgres") \
                         .config("spark.jars.packages",
@@ -22,6 +24,8 @@ def create_spark():
 
 def read_kafka(spark):
 
+    # Reads data from a Kafka topic and returns a DataFrame.
+
     df_kafka = spark.readStream \
                     .format("kafka") \
                     .option("kafka.bootstrap.servers", "kafka:29092") \
@@ -33,6 +37,8 @@ def read_kafka(spark):
     return df_kafka
 
 def format_kafka_df(kafka_df):
+
+    # Formats the Kafka DataFrame by extracting the JSON data and converting it to a structured format.
 
     schema = StructType([
         StructField("user_id", StringType(), False),
@@ -49,6 +55,8 @@ def format_kafka_df(kafka_df):
     return spark_df
 
 def transform_data(spark_df):
+
+    # Transforms the Spark DataFrame by creating user sessions.
 
     session_df = spark_df.withWatermark("timestamp", "10 minutes") \
                         .groupBy(
@@ -91,6 +99,8 @@ def transform_data(spark_df):
 
 def create_postgres_connection():
 
+    # Creates a connection to the PostgreSQL database.
+
     conn = psycopg2.connect(
         dbname = "airflow",
         user = "airflow",
@@ -103,8 +113,9 @@ def create_postgres_connection():
 
 def create_postgres_table(cursor, drop=True):
 
+    # Creates a PostgreSQL table for storing user session data.
+
     if drop:
-        print("Drop table")
         cursor.execute("DROP TABLE IF EXISTS user_session;")
 
     cursor.execute(
@@ -127,6 +138,8 @@ def create_postgres_table(cursor, drop=True):
     )
     
 def write_to_postgres(batch_df, batch_id):
+
+    # Writes the processed batch DataFrame to PostgreSQL.
 
     print(f"--- Processing batch {batch_id} with {batch_df.count()} rows ---")
 
@@ -154,6 +167,7 @@ if __name__ == "__main__":
     postgres_cursor.close()
     postgres_conn.close()
 
+    # Read from Kafka and process data
     kafka_df = read_kafka(spark)
     spark_df = format_kafka_df(kafka_df=kafka_df)
     spark_df_transform = transform_data(spark_df)

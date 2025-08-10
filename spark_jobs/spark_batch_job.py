@@ -12,7 +12,7 @@ def create_spark():
     return spark
 
 def create_aggregate_tables(spark, yesterday):
-    # Đảm bảo đường dẫn này khớp với volume mount của container
+    # Reads data from the Parquet files for the given date
     yesterday_data_path = f"file:///opt/spark/data_lake/sessions/date={yesterday}"
     print(f"Reading data from: {yesterday_data_path}")
     
@@ -22,7 +22,7 @@ def create_aggregate_tables(spark, yesterday):
         print(f"Error reading data: {e}")
         return None, None, None
 
-    # Tạo bảng Daily User Activity
+    # Creates the Daily User Activity table
     daily_user_activity = raw_data.withColumn("session_start_date", to_date(col("session_start_time"))) \
                                     .groupBy(col("user_id"), col("session_start_date")) \
                                     .agg(
@@ -35,8 +35,8 @@ def create_aggregate_tables(spark, yesterday):
                                         "num_sessions",
                                         "total_duration"
                                     )
-    
-    # Tạo bảng Daily Funnel Analysis
+
+    # Creates the Daily Funnel Analysis table
     event_schema = ArrayType(StructType([
         StructField("timestamp", TimestampType(), True),
         StructField("event_type", StringType(), True),
@@ -56,8 +56,8 @@ def create_aggregate_tables(spark, yesterday):
                                         "step_name",
                                         "users_count"
                                     )
-    
-    # Tạo bảng Daily Traffic Source Report
+
+    # Creates the Daily Traffic Source Report table
     daily_traffic_source = raw_data.withColumn("session_start_date", to_date(col("session_start_time"))) \
                                     .groupBy(col("session_start_date"), col("landing_utm_source")) \
                                     .agg(
@@ -74,6 +74,9 @@ def create_aggregate_tables(spark, yesterday):
     return daily_user_activity, daily_funnel_analysis, daily_traffic_source
 
 def write_to_postgres(df, table_name):
+
+    # Writes the DataFrame to PostgreSQL
+
     df.write.jdbc(
         url="jdbc:postgresql://postgres:5432/airflow",
         table=table_name,
@@ -93,7 +96,7 @@ if __name__ == "__main__":
     daily_activity, daily_funnel, daily_traffic = create_aggregate_tables(spark, yesterday_date)
     
     if daily_activity and daily_funnel and daily_traffic:
-        # Ghi dữ liệu vào Postgres
+        # Writes the data to Postgres
         write_to_postgres(daily_activity, "daily_user_activity")
         write_to_postgres(daily_funnel, "daily_funnel_analysis")
         write_to_postgres(daily_traffic, "daily_traffic_source_report")

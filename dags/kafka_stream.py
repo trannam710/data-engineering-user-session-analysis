@@ -9,6 +9,9 @@ from airflow.decorators import dag, task
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 
 def get_data():
+
+    # This function fetches a random user from a mock API
+    # and returns the first user in the response.
     
     request = requests.get("https://fake-json-api.mock.beeceptor.com/users")
     content = request.json()
@@ -17,6 +20,8 @@ def get_data():
     return content
 
 def generate_user_event():
+
+    # This function generates a random user event for testing purposes.
 
     users = [f"user_{i}" for i in range(0, 50)]
     event_type = ["page_view", "click", "add_to_cart", "purchase"]
@@ -37,12 +42,17 @@ def json_serializer(data):
     return json.dumps(data).encode('utf-8') 
      
 @dag(
-    dag_id="My-First-DAG",
+    dag_id="Streaming_Kafka_to_Spark",
     schedule="0 1 * * *",
     start_date=datetime.datetime(2025,7,28)
 )
     
 def run_dag():
+
+    """Streams data from Kafka to Spark using Airflow.
+    It generates random user events and sends them to a Kafka topic,    
+    then processes the data with a Spark job.
+    """
         
     @task
     def kafka_stream(num_records: int):
@@ -59,7 +69,7 @@ def run_dag():
             print(f"Successfully sent {num_records} records.")
         except Exception as e:
             print(f"Error sending data: {e}")
-            raise # Báo lỗi để Airflow biết tác vụ thất bại
+            raise e
         finally:
             producer.close()
 
