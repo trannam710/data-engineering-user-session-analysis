@@ -43,9 +43,13 @@ def format_kafka_df(kafka_df):
     schema = StructType([
         StructField("user_id", StringType(), False),
         StructField("event_type", StringType(), True),
-        StructField("url", StringType(), True),
-        StructField("timestamp", TimestampType(), True),
-        StructField("utm_source", StringType(), True)
+        StructField("product_id", StringType(), True),
+        StructField("event_time", TimestampType(), True),
+        StructField("category_id", StringType(), True),
+        StructField("category_code", StringType(), True),
+        StructField("brand", StringType(), True),
+        StructField("price", StringType(), True),
+        StructField("user_session", StringType(), True)
     ])
 
     spark_df = kafka_df.selectExpr("CAST(value as STRING)") \
@@ -57,42 +61,30 @@ def format_kafka_df(kafka_df):
 def transform_data(spark_df):
 
     # Transforms the Spark DataFrame by creating user sessions.
-
-    session_df = spark_df.withWatermark("timestamp", "10 minutes") \
-                        .groupBy(
-                            col("user_id"),
-                            window(col("timestamp"), "1 minutes")
-                        ).agg(
-                            collect_list(
-                                struct(col("timestamp"), col("event_type"), col("url"), col("utm_source"))
-                            ).alias("events")
-                        )
-
-    session_df_transfrom = session_df.withColumn("session_id", expr("uuid()")) \
-                                    .withColumn("session_start_time", element_at(col("events"), 1).getField("timestamp")) \
-                                    .withColumn("session_end_time", element_at(col("events"), size(col("events"))).getField("timestamp")) \
-                                    .withColumn("session_duration_seconds", col("session_end_time").cast("long") - col("session_start_time").cast("long")) \
-                                    .withColumn("session_duration_minutes", round(col("session_duration_seconds") / 60, 2)) \
-                                    .withColumn("number_of_events", size(col("events"))) \
-                                    .withColumn("landing_page", element_at(col("events"), 1).getField("url")) \
-                                    .withColumn("exit_page", element_at(col("events"), size(col("events"))).getField("url")) \
-                                    .withColumn("landing_utm_source", element_at(col("events"), 1).getField("utm_source")) \
-                                    .withColumn("events_json", to_json(col("events"))) \
-                                    .withColumn("date", current_date())
+    
+    session_df_transfrom = session_df_transfrom.withColumn("extracted_date", current_date()) \
+                                                .withColumn("date", to_date(col("event_time"))) \
+                                                .withColumn("date_of_week", date_format(col("event_time"), "EEEE")) \
+                                                .withColumn("hour_of_day", hour(col("event_time"))) \
+                                                .withColumn("main_category", when(col("category_code").isNotNull(), split(col("category_code"), ".").getItem(0)).otherwise("unknown")) \
+                                                .withColumn("sub_category", when(col("category_code").isNotNull(), split(col("category_code"), ".").getItem(1)).otherwise("unknown")) \
 
     session_df_transfrom = session_df_transfrom.select(
-        "session_id",
+        "user_session",
         "user_id",
-        "session_start_time",
-        "session_end_time",
-        "session_duration_seconds", 
-        "session_duration_minutes",
+        "product_id",
+        "event_time",
+        "category_id",
+        "category_code",
         "number_of_events",
-        "landing_page",
-        "exit_page",
-        "landing_utm_source",
-        "events_json",
-        "date"
+        "brand",
+        "price",
+        "extracted_date",
+        "date",
+        "date_of_week",
+        "hour_of_day",
+        "main_category",
+        "sub_category"
     )
     
     return session_df_transfrom
@@ -128,9 +120,10 @@ def create_postgres_table(cursor, drop=True):
             session_duration_seconds BIGINT, 
             session_duration_minutes NUMERIC(10, 2),
             number_of_events INT,
-            landing_page TEXT,
-            exit_page TEXT,
-            landing_utm_source TEXT,
+            first_product_id TEXT,
+            last_product_id TEXT,
+            first_product_category TEXT,
+            last_product_category TEXT,
             events_json TEXT,
             date TIMESTAMPTZ
         );

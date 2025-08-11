@@ -1,3 +1,4 @@
+import csv
 import json 
 import time 
 import datetime
@@ -57,21 +58,40 @@ def run_dag():
     @task
     def kafka_stream(num_records: int):
 
+        file_path = "/opt/spark/jobs/RAW_DATA/eCommerce-behavior-data-2019-Oct.csv"
+        topic_name = "user-event"
+
         producer = KafkaProducer(
                                 bootstrap_servers = "kafka:29092",
                                 value_serializer = json_serializer)
         
-        
         try:
-            for i in range(num_records):                
-                producer.send("user-event", generate_user_event())
-                time.sleep(random.uniform(0.1, 0.5))
-            print(f"Successfully sent {num_records} records.")
+            with open(file_path, mode='r', encoding='utf-8') as file:
+                csv_reader = csv.DictReader(file)
+                print("Start sending data to Kafka...")
+                for i, row in enumerate(csv_reader):
+                    if i >= num_records:
+                        break
+                    producer.send(topic_name, row)
+                    time.sleep(random.uniform(0.1, 0.5))
+                print("Finished sending data.")
+        except FileNotFoundError:
+            print(f"Error: File not found at {file_path}")
         except Exception as e:
-            print(f"Error sending data: {e}")
-            raise e
+            print(f"Error occurred: {e}")
         finally:
-            producer.close()
+            producer.close()        
+        
+        # try:
+        #     for i in range(num_records):                
+        #         producer.send("user-event", generate_user_event())
+        #         time.sleep(random.uniform(0.1, 0.5))
+        #     print(f"Successfully sent {num_records} records.")
+        # except Exception as e:
+        #     print(f"Error sending data: {e}")
+        #     raise e
+        # finally:
+        #     producer.close()
 
     # Define task
     data_generator_task = kafka_stream(num_records=50)
