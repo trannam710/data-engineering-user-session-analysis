@@ -1,0 +1,2 @@
+v1
+{"path":"file:///opt/spark/data_lake/sessions/extracted_date=2025-08-12/part-00000-9faeb8d8-f6ee-402b-abbe-e34f356d40b0.c000.snappy.parquet","size":6688,"isDir":false,"modificationTime":1755011890049,"blockReplication":1,"blockSize":33554432,"action":"add"}

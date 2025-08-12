@@ -14,7 +14,7 @@ def create_spark():
 
 def create_aggregate_tables(spark, yesterday):
     # Reads data from the Parquet files for the given date
-    yesterday_data_path = f"file:///opt/spark/data_lake/sessions/date={yesterday}"
+    yesterday_data_path = f"file:///opt/spark/data_lake/sessions/extracted_date={yesterday}"
     print(f"Reading data from: {yesterday_data_path}")
     
     try:
@@ -27,11 +27,17 @@ def create_aggregate_tables(spark, yesterday):
     session_level_df = raw_data.groupBy(
         "user_session"
     ).agg(
-        (last("event_time") - first("event_time")).alias("session_duration_seconds"),
+        (floor((last("event_time") - first("event_time")).cast("long"))).alias("session_duration_seconds"),
         count("event_type").alias("number_of_events"),
         countDistinct("product_id").alias("item_view_in_session"),
         # is purchase event
         max(when(col("event_type") == "purchase", 1).otherwise(0)).alias("is_purchase")
+    ).select(
+        "user_session",
+        "session_duration_seconds",
+        "number_of_events",
+        "item_view_in_session",
+        "is_purchase"
     )
 
     # Create User Level DataFrame
@@ -39,7 +45,7 @@ def create_aggregate_tables(spark, yesterday):
         "user_id"
     ).agg(
         sum(when(col("event_type") == "purchase", 1).otherwise(0)).alias("total_purchases"),
-        sum(when(col("event_type") == "purchase") & (col("price").isNotNull()), col("price")).alias("total_spent"),
+        sum(when((col("event_type") == "purchase") & (col("price").isNotNull()), col("price"))).alias("total_spent"),
         max(when(col("event_type") == "purchase", col("event_time"))).alias("last_purchase_date"),
     )
 
@@ -70,7 +76,13 @@ def create_aggregate_tables(spark, yesterday):
             col("last_purchase_date").isNotNull(),
             datediff(lit(current_date), to_date(col("last_purchase_date")))
         ).otherwise(-1)
-    ).drop("last_purchase_date")
+    ).drop("last_purchase_date").select(
+        "user_id",
+        "total_purchases",
+        "total_spent",
+        "days_since_last_purchase",
+        "favorite_category"
+    )
 
     # # Creates the Daily User Activity table
     # daily_user_activity = raw_data.withColumn("session_start_date", to_date(col("session_start_time"))) \

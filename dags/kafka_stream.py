@@ -58,7 +58,7 @@ def run_dag():
     @task
     def kafka_stream(num_records: int):
 
-        file_path = "/opt/spark/jobs/RAW_DATA/eCommerce-behavior-data-2019-Oct.csv"
+        file_path = "/opt/spark/RAW_DATA/eCommerce-behavior-data-2019-Oct.csv"
         topic_name = "user-event"
 
         producer = KafkaProducer(
@@ -94,7 +94,7 @@ def run_dag():
         #     producer.close()
 
     # Define task
-    data_generator_task = kafka_stream(num_records=50)
+    data_generator_task = kafka_stream(num_records=5000)
 
     spark_batch_job_task = SparkSubmitOperator(
         task_id="run_spark_batch_job",

@@ -62,7 +62,7 @@ def transform_data(spark_df):
 
     # Transforms the Spark DataFrame by creating user sessions.
     
-    session_df_transfrom = session_df_transfrom.withColumn("extracted_date", current_date()) \
+    session_df_transfrom = spark_df.withColumn("extracted_date", current_date()) \
                                                 .withColumn("date", to_date(col("event_time"))) \
                                                 .withColumn("date_of_week", date_format(col("event_time"), "EEEE")) \
                                                 .withColumn("hour_of_day", hour(col("event_time"))) \
@@ -74,9 +74,9 @@ def transform_data(spark_df):
         "user_id",
         "product_id",
         "event_time",
+        "event_type",
         "category_id",
         "category_code",
-        "number_of_events",
         "brand",
         "price",
         "extracted_date",
@@ -113,8 +113,9 @@ def create_postgres_table(cursor, drop=True):
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS user_session (
-            session_id TEXT,
+            user_session TEXT PRIMARY KEY,
             user_id TEXT,
+            session_id TEXT,
             session_start_time TIMESTAMPTZ,
             session_end_time TIMESTAMPTZ,
             session_duration_seconds BIGINT, 
@@ -170,7 +171,7 @@ if __name__ == "__main__":
                 .format("parquet") \
                 .option("path", "file:///opt/spark/data_lake/sessions") \
                 .option("checkpointLocation", "file:///opt/spark/data_lake/checkpoints/kafka_to_datalake") \
-                .partitionBy("date") \
+                .partitionBy("extracted_date") \
                 .start()
     
     query.awaitTermination()
