@@ -32,6 +32,7 @@ def read_kafka(spark):
                     .option("subscribe", "user-event") \
                     .option("startingOffsets", "earliest") \
                     .option("failOnDataLoss", "false") \
+                    .option("maxOffsetsPerTrigger", "100000") \
                     .load()
     
     return df_kafka

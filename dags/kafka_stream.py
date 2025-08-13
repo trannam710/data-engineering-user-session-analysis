@@ -61,8 +61,7 @@ def run_dag():
         file_path = "/opt/spark/RAW_DATA/eCommerce-behavior-data-2019-Oct.csv"
         topic_name = "user-event"
 
-        producer = KafkaProducer(
-                                bootstrap_servers = "kafka:29092",
+        producer = KafkaProducer(bootstrap_servers = "kafka:29092",
                                 value_serializer = json_serializer)
         
         try:
@@ -81,17 +80,6 @@ def run_dag():
             print(f"Error occurred: {e}")
         finally:
             producer.close()        
-        
-        # try:
-        #     for i in range(num_records):                
-        #         producer.send("user-event", generate_user_event())
-        #         time.sleep(random.uniform(0.1, 0.5))
-        #     print(f"Successfully sent {num_records} records.")
-        # except Exception as e:
-        #     print(f"Error sending data: {e}")
-        #     raise e
-        # finally:
-        #     producer.close()
 
     # Define task
     data_generator_task = kafka_stream(num_records=5000)

@@ -33,6 +33,7 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CREATE_TOPICS: "user-event:6:1" # format: topic:partitions:replicas
     ports:
       - "9092:9092"     # Host ↔ Kafka
       - "29092:29092"   # Container ↔ Kafka
